@@ -1,0 +1,189 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gdrive-unified"
+version = "1.0.0"
+authors = [
+    {name = "GivingTuesday", email = "tech@givingtuesday.org"},
+]
+description = "Unified toolkit for Google Drive operations and document analysis"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "google-api-python-client>=2.108.0",
+    "google-auth-oauthlib>=1.1.0",
+    "google-auth-httplib2>=0.1.1",
+    "click>=8.0.0",
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0",
+    "rich>=13.0.0",
+    "pathspec>=0.11.0",
+]
+
+[project.optional-dependencies]
+conversion = [
+    "mammoth>=1.9.1",
+    "markdownify>=0.11.6",
+    "python-docx>=1.2.0",
+    "pypandoc>=1.11",
+    "markdown-it-py>=3.0.0",
+    "mdit-py-plugins>=0.4.0",
+]
+analyzer = [
+    "pandas>=2.0.0",
+]
+gui = [
+    "PyQt5>=5.15.0",
+]
+notebooks = [
+    "jupyterlab>=4.0.0",
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0",
+    "scikit-learn>=1.3.0",
+    "nltk>=3.8.0",
+    "spacy>=3.6.0",
+    "wordcloud>=1.9.0",
+    "plotly>=5.15.0",
+    "ipywidgets>=8.0.0",
+    "jupytext>=1.17.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "mypy>=1.0.0",
+    "flake8>=6.0.0",
+    "pre-commit>=3.0.0",
+]
+docs = [
+    "sphinx>=6.0.0",
+    "sphinx-rtd-theme>=1.0.0",
+    "sphinx-click>=4.0.0",
+]
+all = [
+    "gdrive-unified[conversion,analyzer,gui]",
+]
+full = [
+    "gdrive-unified[conversion,analyzer,gui,notebooks,dev,docs]",
+]
+
+[project.urls]
+Homepage = "https://github.com/givingtuesday/gdrive-unified"
+Repository = "https://github.com/givingtuesday/gdrive-unified"
+Issues = "https://github.com/givingtuesday/gdrive-unified/issues"
+
+# Separate CLI commands (backwards compatible)
+[project.scripts]
+gdrive-download = "gdrive_unified.cli.download:main"
+gdrive-manage = "gdrive_unified.cli.manage:main"
+gdrive-search = "gdrive_unified.cli.search:search"
+gdrive-upload = "gdrive_unified.cli.upload:upload"
+gdrive-write-tab = "gdrive_unified.cli.upload:write_to_doc"
+gdrive-analyze = "gdrive_unified.cli.analyze:main"
+# Unified entry point
+gdrive = "gdrive_unified.cli:main"
+
+[project.gui-scripts]
+gdrive-gui = "gdrive_unified.gui:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gdrive_unified"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/README.md",
+    "/CLAUDE.md",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["gdrive_unified"]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--verbose",
+    "--cov=src/gdrive_unified",
+    "--cov-report=html",
+    "--cov-report=term",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+]
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
