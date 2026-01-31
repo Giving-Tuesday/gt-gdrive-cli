@@ -15,32 +15,35 @@ Unified toolkit for Google Drive operations and document analysis.
 ### Basic Installation
 
 ```bash
-pip install gdrive-unified
+uv pip install gdrive-unified
 ```
 
 ### With Optional Features
 
 ```bash
 # Document conversion (DOCX → Markdown)
-pip install gdrive-unified[conversion]
+uv pip install gdrive-unified[conversion]
 
 # Document analysis
-pip install gdrive-unified[analyzer]
+uv pip install gdrive-unified[analyzer]
 
 # Desktop GUI
-pip install gdrive-unified[gui]
+uv pip install gdrive-unified[gui]
 
 # Everything
-pip install gdrive-unified[all]
+uv pip install gdrive-unified[all]
 
 # Development
-pip install gdrive-unified[full]
+uv pip install gdrive-unified[full]
 ```
 
-### Using uv (Recommended)
+### Development (Editable Install)
 
 ```bash
-uvx install gdrive-unified[all]
+git clone https://github.com/givingtuesday/gdrive-unified
+cd gdrive-unified
+uv venv && source .venv/bin/activate
+uv pip install -e ".[full]"
 ```
 
 ## Quick Start
