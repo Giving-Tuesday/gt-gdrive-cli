@@ -12,6 +12,8 @@ Search order:
 1. GDRIVE_CREDENTIALS_PATH environment variable
 2. Current working directory (for development)
 3. XDG/platform config directory (production)
+4. ~/.google/ (common user location)
+5. Bundled package data (built-in fallback)
 """
 
 import os
@@ -58,6 +60,67 @@ def get_config_dir() -> Path:
     return base / "gdrive-unified"
 
 
+def _get_bundled_credentials_path() -> Optional[Path]:
+    """Get path to bundled credentials.json shipped with the package.
+
+    Returns:
+        Path to bundled credentials.json if it exists and contains real
+        credentials (not placeholder), None otherwise.
+    """
+    # Try importlib.resources first (works with installed packages)
+    try:
+        from importlib.resources import files
+
+        data_path = files("gdrive_unified") / "data" / "credentials.json"
+        resolved = Path(str(data_path))
+        if resolved.is_file():
+            return resolved
+    except (ImportError, TypeError, FileNotFoundError):
+        pass
+
+    # Fallback: relative path from this file (works with editable installs)
+    bundled = Path(__file__).parent / "data" / "credentials.json"
+    if bundled.exists():
+        return bundled
+
+    return None
+
+
+def _is_placeholder_credentials(path: Path) -> bool:
+    """Check if a credentials file contains placeholder values.
+
+    Returns:
+        True if the file contains placeholder client_id values.
+    """
+    try:
+        import json
+
+        with open(path) as f:
+            data = json.load(f)
+        client_id = data.get("installed", {}).get("client_id", "")
+        return "REPLACE_WITH" in client_id
+    except Exception:
+        return False
+
+
+def is_bundled_credentials(path: Path) -> bool:
+    """Check if a credentials path points to the bundled package credentials.
+
+    Args:
+        path: Path to check.
+
+    Returns:
+        True if this is the bundled credentials file.
+    """
+    bundled = _get_bundled_credentials_path()
+    if bundled is None:
+        return False
+    try:
+        return path.resolve() == bundled.resolve()
+    except (OSError, ValueError):
+        return False
+
+
 def find_credentials_file() -> Optional[Path]:
     """Find the credentials.json file.
 
@@ -65,6 +128,7 @@ def find_credentials_file() -> Optional[Path]:
     1. GDRIVE_CREDENTIALS_PATH environment variable
     2. Current working directory
     3. Platform config directory
+    4. Bundled package data (built-in fallback)
 
     Returns:
         Path to credentials.json if found, None otherwise.
@@ -90,6 +154,16 @@ def find_credentials_file() -> Optional[Path]:
     config_creds = get_config_dir() / CREDENTIALS_FILE
     if config_creds.exists():
         return config_creds
+
+    # 4. ~/.google/credentials.json (common user location)
+    home_google_creds = Path.home() / ".google" / CREDENTIALS_FILE
+    if home_google_creds.exists():
+        return home_google_creds
+
+    # 5. Bundled package data (lowest priority)
+    bundled = _get_bundled_credentials_path()
+    if bundled is not None and not _is_placeholder_credentials(bundled):
+        return bundled
 
     return None
 
@@ -129,18 +203,37 @@ def find_token_file() -> Optional[Path]:
     if config_token.exists():
         return config_token
 
+    # 4. ~/.google/ (common user location)
+    home_google_token = Path.home() / ".google" / TOKEN_FILE
+    if home_google_token.exists():
+        return home_google_token
+
     return None
 
 
-def get_token_save_path() -> Path:
+def get_token_save_path(credentials_file: Optional[Path] = None) -> Path:
     """Get the path where tokens should be saved.
 
-    Prefers saving next to credentials file, falls back to config directory.
+    When using bundled credentials, tokens are always saved to the platform
+    config directory (never inside the package installation). Otherwise,
+    prefers saving next to credentials file.
+
+    Args:
+        credentials_file: The credentials file being used. If None, auto-discovered.
 
     Returns:
         Path where token.pickle should be saved.
     """
-    credentials_file = find_credentials_file()
+    if credentials_file is None:
+        credentials_file = find_credentials_file()
+
+    # When using bundled credentials, always save to config dir
+    if credentials_file and is_bundled_credentials(credentials_file):
+        config_dir = get_config_dir()
+        config_dir.mkdir(parents=True, exist_ok=True)
+        return config_dir / TOKEN_FILE
+
+    # Save next to credentials file
     if credentials_file:
         return credentials_file.parent / TOKEN_FILE
 
@@ -151,7 +244,7 @@ def get_token_save_path() -> Path:
 
 
 def get_credentials(
-    scopes: Optional[list[str]] = None,
+    scopes: Optional[list] = None,
     credentials_path: Optional[Path] = None,
     token_path: Optional[Path] = None,
 ) -> Credentials:
@@ -194,7 +287,7 @@ def get_credentials(
     if creds and creds.expired and creds.refresh_token:
         creds.refresh(Request())
         # Save refreshed token
-        save_path = token_path or get_token_save_path()
+        save_path = token_path or get_token_save_path(credentials_path)
         with open(save_path, "wb") as token:
             pickle.dump(creds, token)
         return creds
@@ -209,6 +302,7 @@ def get_credentials(
             "1. Set GDRIVE_CREDENTIALS_PATH environment variable\n"
             "2. Place credentials.json in current directory\n"
             f"3. Place credentials.json in {get_config_dir()}\n"
+            f"4. Place credentials.json in {Path.home() / '.google'}\n"
             "\nTo obtain credentials.json, visit the Google Cloud Console:\n"
             "https://console.cloud.google.com/apis/credentials"
         )
@@ -217,12 +311,86 @@ def get_credentials(
     creds = flow.run_local_server(port=0)
 
     # Save the token
-    save_path = token_path or get_token_save_path()
+    save_path = token_path or get_token_save_path(credentials_path)
     save_path.parent.mkdir(parents=True, exist_ok=True)
     with open(save_path, "wb") as token:
         pickle.dump(creds, token)
 
     return creds
+
+
+def ensure_authenticated() -> None:
+    """Check if user is authenticated; if not, prompt for OAuth flow.
+
+    Detects whether bundled or user-provided credentials are in use and
+    shows appropriate messaging. Asks for confirmation before opening browser.
+
+    Raises:
+        click.Abort: If user declines authentication.
+        FileNotFoundError: If no credentials.json can be found at all.
+    """
+    import click
+    from rich.console import Console
+
+    console = Console()
+
+    # Check if token already exists
+    token_file = find_token_file()
+    if token_file and token_file.exists():
+        try:
+            with open(token_file, "rb") as f:
+                creds = pickle.load(f)
+            if creds and creds.valid:
+                return
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+                with open(token_file, "wb") as f:
+                    pickle.dump(creds, f)
+                return
+        except Exception:
+            pass  # Token is corrupted or invalid, proceed to re-auth
+
+    # No valid token — find credentials
+    credentials_file = find_credentials_file()
+
+    if credentials_file is None:
+        console.print("\n[red bold]No credentials found.[/red bold]")
+        console.print(
+            "\nTo get started, you need a Google OAuth credentials file.\n"
+            "Please either:\n"
+            "  1. Set GDRIVE_CREDENTIALS_PATH environment variable\n"
+            "  2. Place credentials.json in current directory\n"
+            f"  3. Place credentials.json in {get_config_dir()}\n"
+            f"  4. Place credentials.json in {Path.home() / '.google'}\n"
+            "\nTo obtain credentials.json, visit the Google Cloud Console:\n"
+            "  https://console.cloud.google.com/apis/credentials"
+        )
+        raise click.Abort()
+
+    using_bundled = is_bundled_credentials(credentials_file)
+
+    if using_bundled:
+        console.print("\n[bold]First-time setup[/bold]")
+        console.print(
+            "This tool includes built-in Google OAuth credentials.\n"
+            "You need to authorize access to your Google Drive account."
+        )
+    else:
+        console.print("\n[bold]Authentication required[/bold]")
+        console.print(
+            f"Using credentials from: [cyan]{credentials_file}[/cyan]\n"
+            "You need to complete the OAuth flow to authorize access."
+        )
+
+    console.print(
+        "\nA browser window will open for you to sign in with your Google account."
+    )
+
+    if not click.confirm("Proceed with authentication?", default=True):
+        raise click.Abort()
+
+    get_credentials(credentials_path=credentials_file)
+    console.print("[green]Authentication successful![/green]\n")
 
 
 def get_credentials_info() -> dict:
@@ -235,10 +403,13 @@ def get_credentials_info() -> dict:
     token_file = find_token_file()
     config_dir = get_config_dir()
 
+    using_bundled = creds_file is not None and is_bundled_credentials(creds_file)
+
     info = {
         "config_directory": str(config_dir),
         "credentials_file": str(creds_file) if creds_file else None,
         "credentials_found": creds_file is not None,
+        "using_bundled": using_bundled,
         "token_file": str(token_file) if token_file else None,
         "token_found": token_file is not None,
         "env_override": os.environ.get("GDRIVE_CREDENTIALS_PATH"),
@@ -265,6 +436,8 @@ def setup_credentials_interactive() -> Tuple[Path, Path]:
     """Interactive setup for credentials.
 
     Guides user through placing credentials.json and running OAuth flow.
+    When bundled credentials are available, skips the Google Cloud Console
+    guidance and proceeds directly to OAuth.
 
     Returns:
         Tuple of (credentials_path, token_path) after successful setup.
@@ -281,9 +454,13 @@ def setup_credentials_interactive() -> Tuple[Path, Path]:
     # Check for existing credentials
     existing_creds = find_credentials_file()
     if existing_creds:
-        console.print(f"[green]Found existing credentials:[/green] {existing_creds}")
-        if not Confirm.ask("Use these credentials?", default=True):
-            existing_creds = None
+        using_bundled = is_bundled_credentials(existing_creds)
+        if using_bundled:
+            console.print("[green]Using built-in credentials (bundled with package)[/green]")
+        else:
+            console.print(f"[green]Found existing credentials:[/green] {existing_creds}")
+            if not Confirm.ask("Use these credentials?", default=True):
+                existing_creds = None
 
     if not existing_creds:
         console.print("\n[yellow]No credentials.json found.[/yellow]")
@@ -305,7 +482,7 @@ def setup_credentials_interactive() -> Tuple[Path, Path]:
     console.print("A browser window will open for authentication.\n")
 
     creds = get_credentials(credentials_path=existing_creds)
-    token_path = get_token_save_path()
+    token_path = get_token_save_path(existing_creds)
 
     console.print(f"\n[green]Setup complete![/green]")
     console.print(f"Credentials: {existing_creds}")
