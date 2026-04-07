@@ -132,9 +132,8 @@ def display_results_table(results: List[dict]):
               help='Target Google Drive folder ID')
 @click.option('--folder-url', 'folder_url',
               help='Target Google Drive folder URL (alternative to --folder-id)')
-@click.option('-c', '--credentials', type=click.Path(exists=True),
-              default='credentials.json',
-              help='Google API credentials file (default: credentials.json)')
+@click.option('-c', '--credentials', type=click.Path(), default=None,
+              help='Google API credentials file (auto-discovered if not specified)')
 @click.option('-p', '--pattern', default='*.md',
               help='Glob pattern for directory search (default: *.md)')
 @click.option('--preview/--no-preview', default=True,
@@ -204,15 +203,23 @@ def upload(
 
     # Setup configuration
     config = GlobalConfig()
-    credentials_path = Path(credentials)
-    config.downloader.credentials_file = credentials_path
-    config.downloader.token_file = credentials_path.parent / "token.pickle"
+    if credentials:
+        credentials_path = Path(credentials)
+    else:
+        from ..credentials import find_credentials_file
+        credentials_path = find_credentials_file()
+        if credentials_path is None:
+            console.print("[red]Error: Could not find credentials.json. Run 'gdrive init' to set up.[/red]")
+            raise click.Abort()
+    config.drive.credentials_file = credentials_path
+    from ..credentials import get_token_save_path
+    config.drive.token_file = get_token_save_path(credentials_path)
 
     console.print(f"[bold blue]Preparing to upload markdown files to Google Drive[/bold blue]")
 
     # Initialize uploader
     try:
-        uploader = GoogleDriveUploader(config.downloader)
+        uploader = GoogleDriveUploader(config.drive)
     except ImportError as e:
         console.print(f"[red]Error: {e}[/red]")
         raise click.Abort()
@@ -323,9 +330,8 @@ def upload(
               help='Google Doc document ID (alternative to --doc-url)')
 @click.option('--tab-id', 'tab_id',
               help='Tab ID to write to (default: first tab)')
-@click.option('-c', '--credentials', type=click.Path(exists=True),
-              default='credentials.json',
-              help='Google API credentials file (default: credentials.json)')
+@click.option('-c', '--credentials', type=click.Path(), default=None,
+              help='Google API credentials file (auto-discovered if not specified)')
 @click.option('--append/--replace', 'append_mode', default=True,
               help='Append to existing content (default) or replace it')
 @click.option('--force/--no-force', 'force', default=False,
@@ -376,15 +382,23 @@ def write_to_doc(
 
     # Setup configuration
     config = GlobalConfig()
-    credentials_path = Path(credentials)
-    config.downloader.credentials_file = credentials_path
-    config.downloader.token_file = credentials_path.parent / "token.pickle"
+    if credentials:
+        credentials_path = Path(credentials)
+    else:
+        from ..credentials import find_credentials_file
+        credentials_path = find_credentials_file()
+        if credentials_path is None:
+            console.print("[red]Error: Could not find credentials.json. Run 'gdrive init' to set up.[/red]")
+            raise click.Abort()
+    config.drive.credentials_file = credentials_path
+    from ..credentials import get_token_save_path
+    config.drive.token_file = get_token_save_path(credentials_path)
 
     console.print(f"[bold blue]Preparing to write markdown to Google Doc[/bold blue]")
 
     # Initialize uploader
     try:
-        uploader = GoogleDriveUploader(config.downloader)
+        uploader = GoogleDriveUploader(config.drive)
     except ImportError as e:
         console.print(f"[red]Error: {e}[/red]")
         raise click.Abort()

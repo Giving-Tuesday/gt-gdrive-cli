@@ -86,18 +86,27 @@ def main(folder_url, file_url, file_id, output_dir, documents_subdir, markdown_s
         markdown_dir = base_dir / markdown_subdir
         
         # Override with CLI arguments
-        config.downloader.output_dir = documents_dir
+        config.drive.output_dir = documents_dir
         if credentials:
             credentials_path = Path(credentials)
-            config.downloader.credentials_file = credentials_path
-            # Store token in same directory as credentials
-            config.downloader.token_file = credentials_path.parent / "token.pickle"
-        elif config.downloader.credentials_file:
-            # Use token file next to default credentials
-            config.downloader.token_file = config.downloader.credentials_file.parent / "token.pickle"
+            config.drive.credentials_file = credentials_path
+        else:
+            from ..credentials import find_credentials_file
+            discovered = find_credentials_file()
+            if discovered:
+                credentials_path = discovered
+                config.drive.credentials_file = credentials_path
+            elif config.drive.credentials_file:
+                credentials_path = config.drive.credentials_file
+            else:
+                console.print("[red]Error: Could not find credentials.json. Run 'gdrive init' to set up.[/red]")
+                raise click.Abort()
+
+        from ..credentials import get_token_save_path
+        config.drive.token_file = get_token_save_path(config.drive.credentials_file)
 
         # Initialize downloader
-        downloader = GoogleDriveDownloader(config.downloader)
+        downloader = GoogleDriveDownloader(config.drive)
         
         console.print(f"[blue]Base directory: {base_dir}[/blue]")
         console.print(f"[blue]Documents: {documents_dir}[/blue]")
@@ -123,7 +132,7 @@ def main(folder_url, file_url, file_id, output_dir, documents_subdir, markdown_s
             console.print(f"[blue]Converting files to markdown...[/blue]")
             
             converter = FileConverter(
-                input_dir=config.downloader.output_dir,
+                input_dir=config.drive.output_dir,
                 output_dir=markdown_dir
             )
             
@@ -150,7 +159,7 @@ def main(folder_url, file_url, file_id, output_dir, documents_subdir, markdown_s
                 url_mappings = downloader.extract_all_urls(folder_url)
 
             tracker = FileRelationshipTracker(
-                downloads_dir=config.downloader.output_dir,
+                downloads_dir=config.drive.output_dir,
                 markdown_dir=markdown_dir
             )
 

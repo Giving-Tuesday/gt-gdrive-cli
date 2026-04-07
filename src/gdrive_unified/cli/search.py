@@ -76,8 +76,8 @@ def parse_since_date(since_str: str) -> datetime:
               default=['document'], help='File types to search for')
 @click.option('-o', '--output-dir', type=click.Path(), 
               help='Output directory (default: search_<pattern>)')
-@click.option('-c', '--credentials', type=click.Path(exists=True), 
-              default='credentials.json', help='Google API credentials file')
+@click.option('-c', '--credentials', type=click.Path(), default=None,
+              help='Google API credentials file (auto-discovered if not specified)')
 @click.option('--download/--no-download', default=True, 
               help='Download found files')
 @click.option('--convert/--no-convert', default=True, 
@@ -150,10 +150,18 @@ def search(
     """
     # Setup configuration
     config = GlobalConfig()
-    credentials_path = Path(credentials)
-    config.downloader.credentials_file = credentials_path
-    # Store token in same directory as credentials
-    config.downloader.token_file = credentials_path.parent / "token.pickle"
+    if credentials:
+        credentials_path = Path(credentials)
+    else:
+        from ..credentials import find_credentials_file
+        credentials_path = find_credentials_file()
+        if credentials_path is None:
+            console.print("[red]Error: Could not find credentials.json. Run 'gdrive init' to set up.[/red]")
+            return
+    config.drive.credentials_file = credentials_path
+    # Store token in same directory as credentials (or config dir for bundled)
+    from ..credentials import is_bundled_credentials, get_token_save_path
+    config.drive.token_file = get_token_save_path(credentials_path)
     
     # Determine output directory
     if output_dir:
@@ -164,7 +172,7 @@ def search(
     # Use consistent directory structure
     documents_dir = base_dir / "documents"
     markdown_dir = base_dir / "markdown"
-    config.downloader.output_dir = documents_dir
+    config.drive.output_dir = documents_dir
     
     # Create base directory (always needed for CSV)
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -189,7 +197,7 @@ def search(
     
     # Search for files
     try:
-        searcher = GoogleDriveSearcher(config.downloader)
+        searcher = GoogleDriveSearcher(config.drive)
         
         search_results = searcher.search_files(
             pattern=pattern,
@@ -274,7 +282,7 @@ def search(
         console.print(f"\n[bold blue]📥 Downloading files...[/bold blue]")
         
         try:
-            downloader = GoogleDriveDownloader(config.downloader)
+            downloader = GoogleDriveDownloader(config.drive)
             download_results = downloader.download_search_results(search_results)
             
             successful_downloads = [r for r in download_results if r[1] is not None]
