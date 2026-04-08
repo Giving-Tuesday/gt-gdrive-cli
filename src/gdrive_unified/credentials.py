@@ -22,6 +22,7 @@ import sys
 from pathlib import Path
 from typing import Optional, Tuple
 
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -32,9 +33,26 @@ DEFAULT_SCOPES = [
     "https://www.googleapis.com/auth/documents",
 ]
 
-# Credential file names
-CREDENTIALS_FILE = "credentials.json"
-TOKEN_FILE = "token.pickle"
+# Credential file names. The canonical (preferred) name is namespaced to
+# avoid collisions with other Google tools that also use ~/.google/credentials.json
+# (gspread, google-api-python-client quickstarts, etc.). The generic name is
+# retained as a fallback so existing installs keep working.
+CREDENTIALS_FILE = "gdrive-unified-credentials.json"
+CREDENTIALS_FILE_LEGACY = "credentials.json"
+CREDENTIALS_FILENAMES = (CREDENTIALS_FILE, CREDENTIALS_FILE_LEGACY)
+
+TOKEN_FILE = "gdrive-unified-token.pickle"
+TOKEN_FILE_LEGACY = "token.pickle"
+TOKEN_FILENAMES = (TOKEN_FILE, TOKEN_FILE_LEGACY)
+
+
+def _first_existing(directory: Path, names) -> Optional[Path]:
+    """Return the first existing file from `names` inside `directory`, or None."""
+    for name in names:
+        candidate = directory / name
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def get_config_dir() -> Path:
@@ -139,26 +157,26 @@ def find_credentials_file() -> Optional[Path]:
         path = Path(env_path)
         if path.is_file():
             return path
-        # If env var points to a directory, look for credentials.json in it
+        # If env var points to a directory, try preferred then legacy filename
         if path.is_dir():
-            cred_file = path / CREDENTIALS_FILE
-            if cred_file.exists():
-                return cred_file
+            found = _first_existing(path, CREDENTIALS_FILENAMES)
+            if found is not None:
+                return found
 
     # 2. Current working directory
-    cwd_creds = Path.cwd() / CREDENTIALS_FILE
-    if cwd_creds.exists():
-        return cwd_creds
+    found = _first_existing(Path.cwd(), CREDENTIALS_FILENAMES)
+    if found is not None:
+        return found
 
     # 3. Platform config directory
-    config_creds = get_config_dir() / CREDENTIALS_FILE
-    if config_creds.exists():
-        return config_creds
+    found = _first_existing(get_config_dir(), CREDENTIALS_FILENAMES)
+    if found is not None:
+        return found
 
-    # 4. ~/.google/credentials.json (common user location)
-    home_google_creds = Path.home() / ".google" / CREDENTIALS_FILE
-    if home_google_creds.exists():
-        return home_google_creds
+    # 4. ~/.google/ (common user location; works on macOS/Linux/Windows)
+    found = _first_existing(Path.home() / ".google", CREDENTIALS_FILENAMES)
+    if found is not None:
+        return found
 
     # 5. Bundled package data (lowest priority)
     bundled = _get_bundled_credentials_path()
@@ -179,34 +197,34 @@ def find_token_file() -> Optional[Path]:
     Returns:
         Path to token.pickle if found, None otherwise.
     """
-    # 1. Environment variable (directory)
+    # 1. Environment variable (directory or file)
     env_path = os.environ.get("GDRIVE_CREDENTIALS_PATH")
     if env_path:
         path = Path(env_path)
         if path.is_dir():
-            token_file = path / TOKEN_FILE
-            if token_file.exists():
-                return token_file
+            found = _first_existing(path, TOKEN_FILENAMES)
+            if found is not None:
+                return found
         elif path.is_file():
-            # If pointing to credentials.json, look in same directory
-            token_file = path.parent / TOKEN_FILE
-            if token_file.exists():
-                return token_file
+            # If pointing to credentials file, look in the same directory
+            found = _first_existing(path.parent, TOKEN_FILENAMES)
+            if found is not None:
+                return found
 
     # 2. Current working directory
-    cwd_token = Path.cwd() / TOKEN_FILE
-    if cwd_token.exists():
-        return cwd_token
+    found = _first_existing(Path.cwd(), TOKEN_FILENAMES)
+    if found is not None:
+        return found
 
     # 3. Platform config directory
-    config_token = get_config_dir() / TOKEN_FILE
-    if config_token.exists():
-        return config_token
+    found = _first_existing(get_config_dir(), TOKEN_FILENAMES)
+    if found is not None:
+        return found
 
     # 4. ~/.google/ (common user location)
-    home_google_token = Path.home() / ".google" / TOKEN_FILE
-    if home_google_token.exists():
-        return home_google_token
+    found = _first_existing(Path.home() / ".google", TOKEN_FILENAMES)
+    if found is not None:
+        return found
 
     return None
 
@@ -227,17 +245,23 @@ def get_token_save_path(credentials_file: Optional[Path] = None) -> Path:
     if credentials_file is None:
         credentials_file = find_credentials_file()
 
-    # When using bundled credentials, always save to config dir
+    # When using bundled credentials, always save to config dir under the
+    # canonical (namespaced) filename.
     if credentials_file and is_bundled_credentials(credentials_file):
         config_dir = get_config_dir()
         config_dir.mkdir(parents=True, exist_ok=True)
         return config_dir / TOKEN_FILE
 
-    # Save next to credentials file
+    # Save next to credentials file. If a legacy token already exists there,
+    # keep writing to that path so existing installs aren't silently forked.
     if credentials_file:
-        return credentials_file.parent / TOKEN_FILE
+        parent = credentials_file.parent
+        legacy = parent / TOKEN_FILE_LEGACY
+        if legacy.exists():
+            return legacy
+        return parent / TOKEN_FILE
 
-    # Default to config directory
+    # Default to config directory under the canonical name.
     config_dir = get_config_dir()
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir / TOKEN_FILE
@@ -285,12 +309,31 @@ def get_credentials(
         return creds
 
     if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        # Save refreshed token
-        save_path = token_path or get_token_save_path(credentials_path)
-        with open(save_path, "wb") as token:
-            pickle.dump(creds, token)
-        return creds
+        try:
+            creds.refresh(Request())
+        except RefreshError as e:
+            # Refresh token was revoked, expired (7-day limit for unpublished
+            # OAuth apps), or the client_id changed. The stored token is now
+            # useless — delete it and fall through to a fresh OAuth flow.
+            stale_path = token_path
+            try:
+                if stale_path and stale_path.exists():
+                    stale_path.unlink()
+            except OSError:
+                pass
+            print(
+                f"\nYour saved Google auth token is no longer valid "
+                f"({e.__class__.__name__}: {e}).\n"
+                f"Removed stale token at: {stale_path}\n"
+                f"Re-running OAuth flow...\n"
+            )
+            creds = None
+        else:
+            # Save refreshed token
+            save_path = token_path or get_token_save_path(credentials_path)
+            with open(save_path, "wb") as token:
+                pickle.dump(creds, token)
+            return creds
 
     # Need to run OAuth flow
     if credentials_path is None:
@@ -343,12 +386,33 @@ def ensure_authenticated() -> None:
             if creds and creds.valid:
                 return
             if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-                with open(token_file, "wb") as f:
-                    pickle.dump(creds, f)
-                return
-        except Exception:
-            pass  # Token is corrupted or invalid, proceed to re-auth
+                try:
+                    creds.refresh(Request())
+                except RefreshError as e:
+                    # Revoked or expired refresh token. Surface the reason,
+                    # delete the stale file, and fall through to re-auth.
+                    console.print(
+                        f"[yellow]Saved token at {token_file} is no longer "
+                        f"valid ({e.__class__.__name__}). "
+                        f"Removing it and re-authenticating.[/yellow]"
+                    )
+                    try:
+                        token_file.unlink()
+                    except OSError:
+                        pass
+                else:
+                    with open(token_file, "wb") as f:
+                        pickle.dump(creds, f)
+                    return
+        except (pickle.UnpicklingError, EOFError, OSError) as e:
+            console.print(
+                f"[yellow]Saved token at {token_file} could not be loaded "
+                f"({e.__class__.__name__}). Removing it and re-authenticating.[/yellow]"
+            )
+            try:
+                token_file.unlink()
+            except OSError:
+                pass
 
     # No valid token — find credentials
     credentials_file = find_credentials_file()

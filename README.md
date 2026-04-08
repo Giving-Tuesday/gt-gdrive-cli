@@ -292,6 +292,16 @@ isort src/
 mypy src/
 ```
 
+## Credentials
+
+See [`docs/CREDENTIALS.md`](docs/CREDENTIALS.md) for the full story, including:
+
+- Whether to use the team's shared OAuth client or create your own Google Cloud project
+- Where `gdrive-unified-credentials.json` is auto-discovered (five locations, cross-platform)
+- Token refresh failures and how the tool now auto-recovers from them
+
+Quick version: drop the JSON at `~/.google/gdrive-unified-credentials.json` and run `gdrive init`.
+
 ## Claude Code skills
 
 This repo ships a Claude Code plugin with two skills: **`gdrive`** (search, download, upload, write-tab, manage) and **`gdrive-analyze`** (template-driven document analysis). Skills live in `skills/` and are wired up via `.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`.

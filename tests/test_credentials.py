@@ -15,7 +15,9 @@ from gdrive_unified.credentials import (
     get_token_save_path,
     get_credentials_info,
     CREDENTIALS_FILE,
+    CREDENTIALS_FILE_LEGACY,
     TOKEN_FILE,
+    TOKEN_FILE_LEGACY,
 )
 
 
@@ -96,15 +98,24 @@ class TestFindCredentialsFile:
     def test_not_found(self) -> None:
         """Test when credentials not found."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            fake_home = Path(tmpdir) / "home"
+            fake_home.mkdir()
             with patch.dict(os.environ, {}, clear=False):
                 os.environ.pop("GDRIVE_CREDENTIALS_PATH", None)
                 original_cwd = os.getcwd()
                 try:
                     os.chdir(tmpdir)
-                    # Also mock config dir to be empty
+                    # Mock config dir AND home dir (for ~/.google/ lookup)
+                    # to be empty so we get a clean "not found" result.
                     with patch(
                         "gdrive_unified.credentials.get_config_dir",
                         return_value=Path(tmpdir) / "nonexistent",
+                    ), patch(
+                        "gdrive_unified.credentials.Path.home",
+                        return_value=fake_home,
+                    ), patch(
+                        "gdrive_unified.credentials._get_bundled_credentials_path",
+                        return_value=None,
                     ):
                         result = find_credentials_file()
                         assert result is None
@@ -170,3 +181,44 @@ class TestGetCredentialsInfo:
         with patch.dict(os.environ, {"GDRIVE_CREDENTIALS_PATH": "/some/path"}):
             info = get_credentials_info()
             assert info["env_override"] == "/some/path"
+
+
+class TestFilenameFallback:
+    """Regression tests for namespaced filename + legacy fallback."""
+
+    def test_canonical_name_preferred_over_legacy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            d = Path(tmpdir)
+            (d / CREDENTIALS_FILE).write_text("canonical")
+            (d / CREDENTIALS_FILE_LEGACY).write_text("legacy")
+            with patch.dict(os.environ, {"GDRIVE_CREDENTIALS_PATH": str(d)}):
+                result = find_credentials_file()
+                assert result is not None
+                assert result.name == CREDENTIALS_FILE
+
+    def test_legacy_name_still_found(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            d = Path(tmpdir)
+            (d / CREDENTIALS_FILE_LEGACY).write_text("legacy-only")
+            with patch.dict(os.environ, {"GDRIVE_CREDENTIALS_PATH": str(d)}):
+                result = find_credentials_file()
+                assert result is not None
+                assert result.name == CREDENTIALS_FILE_LEGACY
+
+    def test_legacy_token_preserved_when_it_already_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            d = Path(tmpdir)
+            creds = d / CREDENTIALS_FILE
+            creds.write_text("{}")
+            legacy_token = d / TOKEN_FILE_LEGACY
+            legacy_token.write_text("existing")
+            save_path = get_token_save_path(creds)
+            assert save_path == legacy_token
+
+    def test_canonical_token_chosen_for_fresh_install(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            d = Path(tmpdir)
+            creds = d / CREDENTIALS_FILE
+            creds.write_text("{}")
+            save_path = get_token_save_path(creds)
+            assert save_path == d / TOKEN_FILE

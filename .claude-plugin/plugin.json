@@ -1,6 +1,6 @@
 {
   "name": "gdrive-unified",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Claude Code skills for the gdrive CLI: search, download, upload, convert, write to Doc tabs, and run template-driven document analysis.",
   "author": {
     "name": "Giving Tuesday Data Team",

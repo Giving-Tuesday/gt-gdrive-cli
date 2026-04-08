@@ -32,15 +32,17 @@ gdrive init         # interactive OAuth setup
 gdrive status       # show credential + token state
 ```
 
-`gdrive` auto-discovers `credentials.json` in this order:
+`gdrive` auto-discovers the credentials file in this order. At each location it tries the namespaced name first, then falls back to the generic legacy name:
 
 1. `$GDRIVE_CREDENTIALS_PATH` (env var — file or directory)
 2. Current working directory
 3. Platform config dir (`~/Library/Application Support/gdrive-unified/` on macOS, `~/.config/gdrive-unified/` on Linux, `%APPDATA%\gdrive-unified\` on Windows)
-4. `~/.google/credentials.json`
+4. `~/.google/` — preferred: `gdrive-unified-credentials.json`; legacy fallback: `credentials.json`
 5. Bundled fallback credentials shipped with the package
 
-Tokens (`token.pickle`) are saved next to the credentials file — except when using bundled creds, in which case they go to the platform config dir. If auth is ever broken (`"Token has been expired or revoked"`), delete `token.pickle` from that location and re-run any command.
+Tokens are saved next to the credentials file (or in the platform config dir for bundled creds), under `gdrive-unified-token.pickle` or the legacy `token.pickle` name if one already exists there. When a refresh fails because the saved token has been revoked or aged out, `gdrive` prints the offending path, deletes it, and re-runs the OAuth flow automatically — the user doesn't need to intervene manually unless `gdrive init` itself fails.
+
+**See [`docs/CREDENTIALS.md`](../../docs/CREDENTIALS.md) in the repo** for the full story: shared-client vs. roll-your-own, Google Cloud Console walkthrough, scope notes, and the common troubleshooting cases.
 
 ## Command reference
 
