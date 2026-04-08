@@ -158,6 +158,11 @@ Unified CLI using Click:
 4. ✅ Imports work without optional deps
 5. ✅ Imports work with optional deps
 
-## Related Repositories
+## Claude Code skills
 
-- **gdrive-skills**: Portable Claude Code skills for gdrive operations
+This repo is itself a Claude Code plugin. Skills live in `skills/`:
+
+- `skills/gdrive/SKILL.md` — wraps the full `gdrive` CLI (search, download, upload, write-tab, manage).
+- `skills/gdrive-analyze/SKILL.md` — wraps `gdrive analyze` and the template system.
+
+Plugin metadata is in `.claude-plugin/plugin.json`; `marketplace.json` exposes it for `/plugin marketplace add Giving-Tuesday/gt-gdrive-cli`. When adding new CLI capabilities, update the matching SKILL.md in the same PR.

@@ -292,6 +292,54 @@ isort src/
 mypy src/
 ```
 
+## Claude Code skills
+
+This repo ships a Claude Code plugin with two skills: **`gdrive`** (search, download, upload, write-tab, manage) and **`gdrive-analyze`** (template-driven document analysis). Skills live in `skills/` and are wired up via `.claude-plugin/plugin.json` + `marketplace.json`.
+
+### Install from the GitHub marketplace entry
+
+```text
+/plugin marketplace add Giving-Tuesday/gt-gdrive-cli
+/plugin install gdrive-unified@gdrive-unified
+```
+
+### Install from a local checkout
+
+```text
+/plugin install /path/to/gt-gdrive-cli
+```
+
+### Verify
+
+```text
+/skills
+# Expect:
+#   gdrive-unified:gdrive
+#   gdrive-unified:gdrive-analyze
+```
+
+### Prerequisites
+
+The plugin expects the `gdrive` CLI on `PATH`. Install it separately:
+
+```bash
+uv tool install 'gdrive-unified[conversion]' \
+  --from git+https://github.com/Giving-Tuesday/gt-gdrive-cli.git
+# or [all] to also get the analyzer and GUI extras
+```
+
+### Updating
+
+Re-run `/plugin install` to pick up new skill content, or `/plugin marketplace update gdrive-unified` if you added it as a marketplace.
+
+### Removing the legacy standalone skill
+
+If you previously installed the old flat-file `gdrive-download` skill, remove it so the new plugin's triggers win:
+
+```bash
+rm -rf ~/.claude/skills/gdrive-download
+```
+
 ## License
 
 MIT License - See LICENSE file for details.
@@ -306,5 +354,5 @@ MIT License - See LICENSE file for details.
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/givingtuesday/gdrive-unified/issues)
+- **Issues**: [GitHub Issues](https://github.com/Giving-Tuesday/gt-gdrive-cli/issues)
 - **Documentation**: See `/docs` directory
