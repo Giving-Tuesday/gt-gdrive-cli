@@ -294,9 +294,11 @@ mypy src/
 
 ## Claude Code skills
 
-This repo ships a Claude Code plugin with two skills: **`gdrive`** (search, download, upload, write-tab, manage) and **`gdrive-analyze`** (template-driven document analysis). Skills live in `skills/` and are wired up via `.claude-plugin/plugin.json` + `marketplace.json`.
+This repo ships a Claude Code plugin with two skills: **`gdrive`** (search, download, upload, write-tab, manage) and **`gdrive-analyze`** (template-driven document analysis). Skills live in `skills/` and are wired up via `.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`.
 
-### Install from the GitHub marketplace entry
+`/plugin install` takes `<plugin>@<marketplace>`, not a directory — you must register a marketplace first, then install the plugin from it.
+
+### Install from GitHub (recommended)
 
 ```text
 /plugin marketplace add Giving-Tuesday/gt-gdrive-cli
@@ -306,7 +308,8 @@ This repo ships a Claude Code plugin with two skills: **`gdrive`** (search, down
 ### Install from a local checkout
 
 ```text
-/plugin install /path/to/gt-gdrive-cli
+/plugin marketplace add /path/to/gt-gdrive-cli
+/plugin install gdrive-unified@gdrive-unified
 ```
 
 ### Verify

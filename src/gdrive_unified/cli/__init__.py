@@ -23,6 +23,9 @@ Unified entry point:
 
 import click
 
+# Commands that require Google Drive authentication
+AUTH_REQUIRED_COMMANDS = {"download", "search", "upload", "write-tab", "manage"}
+
 
 @click.group()
 @click.version_option(package_name="gdrive-unified")
@@ -37,6 +40,15 @@ def main(ctx: click.Context, verbose: bool) -> None:
     """
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
+
+    # Auto-init: check authentication for commands that need it
+    if ctx.invoked_subcommand in AUTH_REQUIRED_COMMANDS:
+        from ..credentials import ensure_authenticated
+
+        try:
+            ensure_authenticated()
+        except click.Abort:
+            raise
 
 
 @main.command()
@@ -75,10 +87,13 @@ def status(ctx: click.Context) -> None:
     cred_table.add_column("Value")
 
     cred_table.add_row("Config Directory", cred_info["config_directory"])
-    cred_table.add_row(
-        "Credentials File",
-        cred_info["credentials_file"] or "[red]Not found[/red]",
-    )
+
+    # Show credentials file with bundled indicator
+    creds_display = cred_info["credentials_file"] or "[red]Not found[/red]"
+    if cred_info.get("using_bundled"):
+        creds_display = f"{creds_display} [green](built-in)[/green]"
+    cred_table.add_row("Credentials File", creds_display)
+
     cred_table.add_row(
         "Token File",
         cred_info["token_file"] or "[yellow]Not found[/yellow]",
