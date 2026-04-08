@@ -13,7 +13,7 @@ The filenames are namespaced so they don't collide with other Google tools (`gsp
 
 ### Path A — use the team's shared OAuth client
 
-If you're on the Giving Tuesday Data Team (or another group that ships its own OAuth client), ask the maintainer for `gdrive-unified-credentials.json`. Drop it into one of the locations in the [Where to put the file](#where-to-put-the-file) section below and run:
+If you're on the Giving Tuesday Data Team (or another group that ships its own OAuth client), ask the maintainer for `gdrive-unified-credentials.json`. You'll get the file out-of-band (1Password, a private Slack DM, or a private Drive folder — **not** from the public repo or PyPI release). Drop it into one of the locations in the [Where to put the file](#where-to-put-the-file) section below and run:
 
 ```bash
 gdrive init
@@ -21,10 +21,26 @@ gdrive init
 
 This opens a browser window, asks *you* to sign in with your Google account, and writes your personal token locally. The shared client JSON is *not* a secret in the cryptographic sense — Google's Desktop OAuth flow explicitly assumes the client secret can be extracted from the binary. What is personal is the **token**, which is issued to your Google account and stays on your machine.
 
+**Why out-of-band instead of bundling the client JSON in the PyPI release?**
+
+- A `client_secret` committed to a public GitHub repo gets scraped by bots that happily burn your OAuth project's daily quotas. Not a security hole — a reliability one.
+- Rotation is cheaper: drop a new file into 1Password and ping the team, no package release needed.
+- Quotas are per-OAuth-project, so if the client ever ends up embedded in any downstream artifact, your project bears the cost.
+
 Caveats your maintainer should already have sorted, but worth checking:
 
-- The OAuth consent screen must be **Published** (or the maintainer must have added you as a Test User). Unpublished apps in Testing mode are limited to 100 test users and tokens expire every 7 days.
-- If the scopes change, old tokens won't work — delete your token file and re-run `gdrive init`.
+- The OAuth consent screen must be **Published** (or the maintainer must have added you as a Test User). Unpublished apps in Testing mode are limited to 100 test users and refresh tokens expire every 7 days.
+- If the scopes change, old tokens won't work — delete your token file and re-run `gdrive init`. (`gdrive` now detects this class of failure automatically and re-runs the flow for you.)
+
+#### For maintainers: how to ship the shared client
+
+1. Create a Desktop OAuth client in Google Cloud Console (same process as Path B below).
+2. Publish the consent screen, or add each team member as a Test User.
+3. Upload the JSON to a 1Password vault item named something like "gdrive-unified: shared OAuth client".
+4. Link the vault item from the team's internal onboarding doc.
+5. When rotating, upload the new file to the same vault item and notify the team — members delete their old `gdrive-unified-token.pickle` and re-run `gdrive init`.
+
+There is still a `_get_bundled_credentials_path()` fallback in `credentials.py` that looks inside `src/gdrive_unified/data/` — we chose not to use it for distribution, but it's available if you ever need it for a tightly-controlled internal release.
 
 ### Path B — create your own Google Cloud project
 
@@ -75,7 +91,15 @@ On first successful auth, expect to see:
 
 ## Troubleshooting
 
-Run `gdrive status` for a snapshot of what the tool thinks it's using — credentials path, token path, validity, whether you're on bundled creds, and any env var override.
+Run `gdrive status` for a quick snapshot (credentials path, token path, validity, bundled?, env var override).
+
+For a full copy-paste-friendly diagnostic — including Python version, platform, which optional extras are installed, whether `pandoc` is on `PATH`, and the full token state including scopes — run:
+
+```bash
+gdrive doctor
+```
+
+`gdrive doctor` does **not** contact Google, so it works offline and when your auth is completely broken. Paste its entire output into any bug report.
 
 ### `Could not find credentials.json`
 

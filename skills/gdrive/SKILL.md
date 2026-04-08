@@ -29,8 +29,11 @@ Run `gdrive init` once. This handles the OAuth flow end-to-end using the credent
 
 ```bash
 gdrive init         # interactive OAuth setup
-gdrive status       # show credential + token state
+gdrive status       # quick credential + token state
+gdrive doctor       # full diagnostic, offline-safe, paste into bug reports
 ```
+
+When a user reports "it's broken" or "auth isn't working", the first thing to do is ask them to run `gdrive doctor` and paste the output. It reports Python version, platform, which `[conversion]`/`[analyzer]`/`[gui]` extras are installed, whether `pandoc` is on `PATH`, the discovered credentials file and bundled status, and the full token state (valid? expired? refresh token present? scopes?). It never contacts Google, so it works even when auth is completely broken.
 
 `gdrive` auto-discovers the credentials file in this order. At each location it tries the namespaced name first, then falls back to the generic legacy name:
 

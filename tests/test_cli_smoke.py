@@ -8,6 +8,7 @@ AttributeError on `config.downloader` that --help would have caught.
 
 from click.testing import CliRunner
 
+from gdrive_unified.cli import main as gdrive_main
 from gdrive_unified.cli.search import search
 from gdrive_unified.cli.upload import upload
 from gdrive_unified.cli.download import main as download_main
@@ -28,6 +29,15 @@ def test_upload_help():
 def test_download_help():
     result = CliRunner().invoke(download_main, ["--help"])
     assert result.exit_code == 0
+
+
+def test_doctor_runs_offline():
+    """`gdrive doctor` must never contact Google and must always exit 0."""
+    result = CliRunner().invoke(gdrive_main, ["doctor"])
+    assert result.exit_code == 0, result.output
+    assert "gdrive doctor" in result.output
+    assert "## Environment" in result.output
+    assert "## Credentials" in result.output
 
 
 def test_search_config_attribute_exists():

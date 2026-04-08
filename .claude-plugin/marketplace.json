@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Claude Code plugin for the gdrive-unified CLI: search, download, upload, convert, write to Doc tabs, and run template-driven document analysis.",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "plugins": [
     {
       "name": "gdrive-unified",
       "source": "./",
       "description": "Claude Code skills (gdrive and gdrive-analyze) wrapping the gdrive-unified CLI for Google Drive I/O and template-driven document analysis.",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "homepage": "https://github.com/Giving-Tuesday/gt-gdrive-cli",
       "repository": "https://github.com/Giving-Tuesday/gt-gdrive-cli",
       "license": "MIT",

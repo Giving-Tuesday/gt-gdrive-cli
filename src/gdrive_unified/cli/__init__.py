@@ -116,6 +116,126 @@ def status(ctx: click.Context) -> None:
         console.print("Config file: [yellow]Using defaults[/yellow]")
 
 
+@main.command()
+@click.pass_context
+def doctor(ctx: click.Context) -> None:
+    """Print a plaintext diagnostic for bug reports.
+
+    Collects environment, install, and credential state in a copy-paste
+    friendly format. Does not contact Google — safe to run when offline
+    or when auth is broken.
+    """
+    import importlib
+    import importlib.metadata
+    import os
+    import pickle
+    import platform
+    import shutil
+    import sys
+
+    from ..credentials import (
+        CREDENTIALS_FILE,
+        CREDENTIALS_FILE_LEGACY,
+        TOKEN_FILE,
+        TOKEN_FILE_LEGACY,
+        find_credentials_file,
+        find_token_file,
+        get_config_dir,
+        is_bundled_credentials,
+    )
+    from ..config import find_config_file
+
+    lines: list[str] = []
+
+    def section(title: str) -> None:
+        lines.append("")
+        lines.append(f"## {title}")
+
+    def kv(k: str, v) -> None:
+        lines.append(f"- {k}: {v}")
+
+    lines.append("# gdrive doctor")
+    lines.append("Paste this whole block into a bug report.")
+
+    # --- Environment ---
+    section("Environment")
+    try:
+        version = importlib.metadata.version("gdrive-unified")
+    except importlib.metadata.PackageNotFoundError:
+        version = "(not installed as a package)"
+    kv("gdrive-unified", version)
+    kv("python", sys.version.split()[0])
+    kv("platform", f"{platform.system()} {platform.release()} ({platform.machine()})")
+    kv("executable", sys.executable)
+    kv("GDRIVE_CREDENTIALS_PATH", os.environ.get("GDRIVE_CREDENTIALS_PATH") or "(unset)")
+
+    # --- Optional dependencies ---
+    section("Optional dependencies")
+    extras = {
+        "mammoth": "[conversion] — DOCX→markdown",
+        "markdownify": "[conversion] — HTML→markdown",
+        "markdown_it": "[conversion] — markdown→Google Docs upload",
+        "pypandoc": "[conversion] — Pandoc upload method",
+        "pandas": "[analyzer] — document analysis",
+        "PyQt5": "[gui] — desktop app",
+    }
+    for mod, label in extras.items():
+        try:
+            importlib.import_module(mod)
+            kv(f"{mod} ({label})", "ok")
+        except ImportError:
+            kv(f"{mod} ({label})", "MISSING")
+
+    pandoc_bin = shutil.which("pandoc")
+    kv("pandoc binary", pandoc_bin or "MISSING (needed for --method pandoc)")
+
+    # --- Credentials ---
+    section("Credentials")
+    kv("config directory", get_config_dir())
+    kv("canonical creds filename", CREDENTIALS_FILE)
+    kv("legacy creds filename", CREDENTIALS_FILE_LEGACY)
+    kv("canonical token filename", TOKEN_FILE)
+    kv("legacy token filename", TOKEN_FILE_LEGACY)
+
+    creds_path = find_credentials_file()
+    if creds_path is None:
+        kv("credentials file", "NOT FOUND")
+    else:
+        kv("credentials file", creds_path)
+        kv("  exists", creds_path.exists())
+        kv("  bundled", is_bundled_credentials(creds_path))
+        try:
+            kv("  size", f"{creds_path.stat().st_size} bytes")
+        except OSError as e:
+            kv("  stat error", e)
+
+    token_path = find_token_file()
+    if token_path is None:
+        kv("token file", "NOT FOUND")
+    else:
+        kv("token file", token_path)
+        try:
+            with open(token_path, "rb") as f:
+                token_obj = pickle.load(f)
+            kv("  loaded", "ok")
+            kv("  valid", getattr(token_obj, "valid", "?"))
+            kv("  expired", getattr(token_obj, "expired", "?"))
+            kv("  has_refresh_token", bool(getattr(token_obj, "refresh_token", None)))
+            scopes = getattr(token_obj, "scopes", None)
+            if scopes:
+                kv("  scopes", ", ".join(scopes))
+        except Exception as e:
+            kv("  load_error", f"{e.__class__.__name__}: {e}")
+
+    # --- Config file ---
+    section("Config file")
+    cfg = find_config_file()
+    kv("config file", cfg or "(none — using defaults)")
+
+    # --- Emit ---
+    click.echo("\n".join(lines))
+
+
 # Import and add subcommands from individual modules
 # Using lazy imports to avoid dependency issues
 
