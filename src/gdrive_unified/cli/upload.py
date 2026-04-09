@@ -268,7 +268,7 @@ def upload(
     if method.lower() == 'pandoc':
         # Use Pandoc method (preserves footnotes)
         try:
-            from gdrive_download.downloader.pandoc_uploader import PandocUploader
+            from ..drive.pandoc_uploader import PandocUploader
             pandoc_uploader = PandocUploader(uploader)
 
             # Upload files using Pandoc

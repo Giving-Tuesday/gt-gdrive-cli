@@ -31,6 +31,18 @@ def test_download_help():
     assert result.exit_code == 0
 
 
+def test_pandoc_uploader_import_path():
+    """Regression: the Pandoc upload path must not reference the legacy
+    gdrive_download package (pre-unification import)."""
+    from gdrive_unified.drive.pandoc_uploader import PandocUploader  # noqa: F401
+
+    # Also assert the CLI's lazy import target exists on the expected module,
+    # so renaming the class without updating cli/upload.py fails a test
+    # rather than a user's live upload.
+    import gdrive_unified.drive.pandoc_uploader as mod
+    assert hasattr(mod, "PandocUploader")
+
+
 def test_doctor_runs_offline():
     """`gdrive doctor` must never contact Google and must always exit 0."""
     result = CliRunner().invoke(gdrive_main, ["doctor"])
